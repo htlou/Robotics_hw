@@ -56,6 +56,7 @@ ylim([1,size(envmap,1)]);
 % Note (x,y) = (col,row) in MATLAB sense
 tree.nodes = start;
 tree.edges = [];
+tree.costs = 0;
 goalReached = false;
 
 ct = 0;
@@ -77,38 +78,57 @@ while(1)
     %%%
     % Sample random point with a bias towards the goal
     if rand < 0.01
-        sample = goal; % Goal bias
+        sample = goal;
     else
-        sample = [randi(size(envmap,2)), randi(size(envmap,1))]; % Random sample
+        sample = [randi(size(envmap,2)), randi(size(envmap,1))];
     end
-    
-    % Find nearest node in the tree to the sample
-    [~, idx] = min(sqrt(sum((tree.nodes - sample).^2, 2)));
+
+    % Find nearest node in the tree
+    [minDist, idx] = min(sqrt(sum((tree.nodes - sample).^2, 2)));
     nearest = tree.nodes(idx, :);
-    
-    % Move from nearest to sample, with maximum step size of deltaStep
+
+    % Extend towards the sample
     direction = (sample - nearest) / norm(sample - nearest);
-    if norm(sample - nearest) > deltaStep
+    if minDist > deltaStep
         xnew = nearest + direction * deltaStep;
     else
         xnew = sample;
     end
-    
-    % Check if the path between nearest and xnew is collision-free
+
+    % Check if the new node is in a valid position
     if collcheckstline(nearest, xnew, envmap)
+        % Minimize the cost
+        minCost = tree.costs(idx) + norm(xnew - nearest);
+        newNodeIdx = size(tree.nodes, 1) + 1;
         tree.nodes = [tree.nodes; xnew];
-        tree.edges = [tree.edges; idx size(tree.nodes, 1)];
+        tree.edges = [tree.edges; idx newNodeIdx];
+        tree.costs = [tree.costs minCost];
         
-        % Plot edge
-        plot([nearest(1) xnew(1)], [nearest(2) xnew(2)], 'w-', 'LineWidth', 2);
+        % Try to reconnect through xnew
+        for j = 1:size(tree.nodes, 1)-1
+            if j == newNodeIdx
+                continue;
+            end
+            if norm(tree.nodes(j, :) - xnew) < deltaStep && collcheckstline(tree.nodes(j, :), xnew, envmap)
+                potentialCost = tree.costs(j) + norm(tree.nodes(j, :) - xnew);
+                if potentialCost < minCost
+                    tree.edges(tree.edges(:,2) == newNodeIdx, 1) = j;
+                    tree.costs(newNodeIdx) = potentialCost;
+                    minCost = potentialCost;
+                end
+            end
+        end
+        
+        % Plot new edge
+        parentNode = tree.edges(tree.edges(:,2) == newNodeIdx, 1);
+        plot([tree.nodes(parentNode, 1) xnew(1)], [tree.nodes(parentNode, 2) xnew(2)], 'w-', 'LineWidth', 2);
         drawnow;
-        
-        % Check if goal is reached
+
+        % Check if goal is near
         if norm(xnew - goal) < deltaStep
             goalReached = true;
         end
     end
-
     % Display intermittently
     if ~mod(ct,200)
         figure(fg);
@@ -125,7 +145,7 @@ end
 
 %%%
 fpath = reconstruct_path(tree, size(tree.nodes, 1));
-cost = sum(sqrt(sum(diff(fpath).^2, 2))); % Path cost as sum of Euclidean distances
+cost = tree.costs(find(all(tree.nodes == fpath(1, :), 2)));
 
 % Draw a final time before exiting
 figure(fg);
@@ -135,10 +155,11 @@ drawnow;
 end
 
 function path = reconstruct_path(tree, nodeIdx)
+    % This function reconstructs the path from start to the node with index nodeIdx in the tree
     path = tree.nodes(nodeIdx, :);
     while nodeIdx ~= 1
-        nodeIdx = tree.edges(tree.edges(:,2) == nodeIdx, 1);
-        path = [tree.nodes(nodeIdx, :); path];
+        nodeIdx = tree.edges(tree.edges(:,2) == nodeIdx, 1); % Find the parent node
+        path = [tree.nodes(nodeIdx, :); path]; % Prepend the parent node to the path
     end
 end
 
