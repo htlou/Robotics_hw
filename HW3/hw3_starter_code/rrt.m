@@ -54,9 +54,15 @@ ylim([1,size(envmap,1)]);
 %   find the path from start to goal.
 % 
 % Note (x,y) = (col,row) in MATLAB sense
-% 
+tree.nodes = start;
+tree.edges = [];
+goalReached = false;
+
 ct = 0;
 while(1)
+    if goalReached
+        break;
+    end
     %%% TODO: Run till goal is reached
     % Sample random state (sample goal with 1% prob)
 
@@ -69,6 +75,39 @@ while(1)
     % Check for reaching goal & repeat
     
     %%%
+    % Sample random point with a bias towards the goal
+    if rand < 0.01
+        sample = goal; % Goal bias
+    else
+        sample = [randi(size(envmap,2)), randi(size(envmap,1))]; % Random sample
+    end
+    
+    % Find nearest node in the tree to the sample
+    [~, idx] = min(sqrt(sum((tree.nodes - sample).^2, 2)));
+    nearest = tree.nodes(idx, :);
+    
+    % Move from nearest to sample, with maximum step size of deltaStep
+    direction = (sample - nearest) / norm(sample - nearest);
+    if norm(sample - nearest) > deltaStep
+        xnew = nearest + direction * deltaStep;
+    else
+        xnew = sample;
+    end
+    
+    % Check if the path between nearest and xnew is collision-free
+    if collcheckstline(nearest, xnew, envmap)
+        tree.nodes = [tree.nodes; xnew];
+        tree.edges = [tree.edges; idx size(tree.nodes, 1)];
+        
+        % Plot edge
+        plot([nearest(1) xnew(1)], [nearest(2) xnew(2)], 'w-', 'LineWidth', 2);
+        drawnow;
+        
+        % Check if goal is reached
+        if norm(xnew - goal) < deltaStep
+            goalReached = true;
+        end
+    end
 
     % Display intermittently
     if ~mod(ct,200)
@@ -78,16 +117,33 @@ while(1)
     
     % Increment counter
     ct = ct+1; 
+    
 end
 
 %%% TODO: Backtrack to find the path between start & goal as well as the cost of the path
 % You need to set variables fpath & cost
 
 %%%
+fpath = reconstruct_path(tree, size(tree.nodes, 1));
+cost = sum(sqrt(sum(diff(fpath).^2, 2))); % Path cost as sum of Euclidean distances
 
 % Draw a final time before exiting
 figure(fg);
 plot(fpath(:,1), fpath(:,2), 'k.-', 'Linewidth',2);
 drawnow;
 
+end
+
+function path = reconstruct_path(tree, nodeIdx)
+    path = tree.nodes(nodeIdx, :);
+    while nodeIdx ~= 1
+        nodeIdx = tree.edges(tree.edges(:,2) == nodeIdx, 1);
+        path = [tree.nodes(nodeIdx, :); path];
+    end
+end
+
+function free = collcheckstline(p1, p2, map)
+    % Bresenham's Line Algorithm for collision checking
+    [cx, cy] = bresenham(p1(1), p1(2), p2(1), p2(2));
+    free = all(map(sub2ind(size(map), cy, cx)) == 0);
 end

@@ -94,7 +94,7 @@ fScore(start(2), start(1)) = heuristic(start, goal);
 %     % Increment counter
 %     ct = ct+1;
 % end
-
+ct = 0;
 while ~isempty(openSet)
     % Find the node in openSet with the lowest fScore
     [~, idx] = min(arrayfun(@(x) fScore(openSet(x,2), openSet(x,1)), 1:size(openSet,1)));
@@ -129,11 +129,13 @@ while ~isempty(openSet)
     end
 
     % Update display every few iterations
-    if mod(numel(find(displaymap == 2 | displaymap == 3)), 10) == 0
+    if ~mod(ct,200)
         figure(fg);
         set(imgg, 'CData', displaymap);
         drawnow;
     end
+
+    ct = ct+1;
 end
 
 %%% TODO: Backtrack to find shortest path & cost of the path
