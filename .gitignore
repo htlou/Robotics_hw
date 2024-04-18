@@ -30,5 +30,5 @@ codegen/
 # Octave session info
 octave-workspace
 
-.history
+.history/
 .DS_Store
