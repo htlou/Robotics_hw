@@ -1,6 +1,16 @@
-function [fpath, cost] = rrt_star(envmap, start, goal, deltaStep)
-% Implements the RRT* motion planner to find a collision-free path
-% INPUTS and OUTPUTS are same as RRT
+function [fpath, cost] = rrtstar(envmap, start, goal, deltaStep)
+% Implements the RRT-Star motion planner for a point-robot to find a
+% collision-free path from start to goal
+% INPUTS:
+% envmap  - Map of the environment, envmap(y,x) = 1 means the cell
+%           (x,y) is an obstacle, envmap(y,x) = 0 means it is free
+% start   - Robot start [x,y] = [col,row]
+% goal    - Robot goal [x,y] = [col,row]
+% deltaStep - (Optional) Approx. number of cells by which to extend the graph in
+%             direction of the nearest-neigbour on the graph (Default: 10)
+% OUTPUTS:
+% fpath   - Final collision-free path (N x 2, each row is [x,y])
+% cost    - Cost of the final path (sum of squared distances between nodes on the path)
 
 if nargin < 3
     error('Need to pass in map, start and goal');
@@ -19,6 +29,22 @@ title('RRT* Planning');
 xlim([1, size(envmap,2)]);
 ylim([1, size(envmap,1)]);
 
+%% TODO:
+% Implement RRT to find a collision free path. Note that the edges also
+% have to be collision-free, not just the nodes.
+%   a) Sample states at random 99% of time, 1% sample goal state
+%   b) Extend the graph by "deltaStep" steps from the nearest
+%   neighbour of the sample in the direction of the sample. If sample is
+%   within deltaStep distance, use it directly
+%   c) Check within a ball around "xnew" to find min cost state to "xnew".
+%   Set that as the parent
+%   d) Check if any other state in the ball around "xnew" has a better path
+%   through "xnew". If so, rewire the graph.
+%   c) Approximate collision checking for the (approximate) straight line path
+%   between two states can be done using the function "collcheckstline"
+%   d) Run till you find a state on the graph which is near the goal state
+%   e) Display the progression of the graph generation for RRTStar (figure(fg))
+
 % Initialize tree
 tree.nodes = start;
 tree.edges = [];
@@ -26,6 +52,8 @@ tree.costs = 0;  % Cost from start to the node
 goalReached = false;
 
 ct = 0;
+% set an appropriate radius for rewiring
+radius = 4;
 while true
     if goalReached
         break;
@@ -50,33 +78,45 @@ while true
         xnew = sample;
     end
 
-    % Check if the new node is in a valid position
     if collcheckstline(nearest, xnew, envmap)
-        % Minimize the cost
-        minCost = tree.costs(idx) + norm(xnew - nearest);
-        newNodeIdx = size(tree.nodes, 1) + 1;
-        tree.nodes = [tree.nodes; xnew];
-        tree.edges = [tree.edges; idx newNodeIdx];
-        tree.costs = [tree.costs minCost];
-        
-        % Try to reconnect through xnew
-        for j = 1:size(tree.nodes, 1)-1
-            if j == newNodeIdx
-                continue;
-            end
-            if norm(tree.nodes(j, :) - xnew) < deltaStep && collcheckstline(tree.nodes(j, :), xnew, envmap)
-                potentialCost = tree.costs(j) + norm(tree.nodes(j, :) - xnew);
-                if potentialCost < minCost
-                    tree.edges(tree.edges(:,2) == newNodeIdx, 1) = j;
-                    tree.costs(newNodeIdx) = potentialCost;
-                    minCost = potentialCost;
+        % Find all nodes within the radius
+        distances = sqrt(sum((tree.nodes - xnew).^2, 2));
+        nearbyIndices = find(distances < radius);
+
+        % Find minimum cost to xnew
+        minCost = inf;
+        minNode = idx;
+        for j = nearbyIndices'
+            if collcheckstline(tree.nodes(j, :), xnew, envmap)
+                newCost = tree.costs(j) + norm(tree.nodes(j, :) - xnew);
+                if newCost < minCost
+                    minCost = newCost;
+                    minNode = j;
                 end
             end
         end
-        
-        % Plot new edge
-        parentNode = tree.edges(tree.edges(:,2) == newNodeIdx, 1);
-        plot([tree.nodes(parentNode, 1) xnew(1)], [tree.nodes(parentNode, 2) xnew(2)], 'w-', 'LineWidth', 2);
+
+        % Add xnew to the tree
+        newNodeIdx = size(tree.nodes, 1) + 1;
+        tree.nodes = [tree.nodes; xnew];
+        tree.edges = [tree.edges; minNode newNodeIdx];
+        tree.costs = [tree.costs minCost];
+
+        % Rewire the tree
+        for j = nearbyIndices'
+            if j == newNodeIdx, continue; end
+            if collcheckstline(xnew, tree.nodes(j, :), envmap)
+                potentialCost = minCost + norm(xnew - tree.nodes(j, :));
+                if potentialCost < tree.costs(j)
+                    tree.edges(tree.edges(:, 2) == j, 1) = newNodeIdx;
+                    tree.costs(j) = potentialCost;
+                end
+            end
+        end
+
+        % Plot new edges and nodes
+        parentNode = tree.edges(tree.edges(:, 2) == newNodeIdx, 1);
+        plot([tree.nodes(parentNode, 1), xnew(1)], [tree.nodes(parentNode, 2), xnew(2)], 'w-', 'LineWidth', 2);
         drawnow;
 
         % Check if goal is near
